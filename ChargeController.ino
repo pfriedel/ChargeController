@@ -11,28 +11,78 @@
 byte __attribute__ ((section (".noinit"))) last_mode;
 
 int MAX_MODE = 5; /* how many LEDs do you have? (from zero) */
+const int LED_COUNT = 6;
 
-uint8_t led_grid[6] = {0,0,0,0,0,0};
+uint8_t led_grid[LED_COUNT] = {0,0,0,0,0,0};
 
-/* ( AnodePin | CathodePin ) for each LED */
-const uint8_t led_dir[6] = {
-  ( 1<<3 | 1<<4 ), /* 1 */
-  ( 1<<1 | 1<<4 ), /* 2 */
-  ( 1<<4 | 1<<3 ), /* 3 */
-  ( 1<<4 | 1<<1 ), /* 4 */
-  ( 1<<1 | 1<<3 ), /* 5 */
-  ( 1<<3 | 1<<1 ), /* 6 */
+/* 
+   ( AnodePin | CathodePin ) for each LED.  
+
+   Writing a 1 to this register makes the pin behave as an output, writing a 0
+   makes it an input (Hi-Z).
+
+   PB5 is reset, so unused.
+   PB2 is SCL, so unused.
+   PB0 is SDA, so unused.
+   
+   DDRB – Port B Data Direction Register
+   Bit 5     4     3     2     1     0
+   Pin DDRB5 DDRB4 DDRB3 DDRB2 DDRB1 DDRB0
+
+*/
+
+const uint8_t led_dir_on[LED_COUNT] = { /*        Pin 4 3210 */
+  ( _BV(PB3) | _BV(PB4) ), /* 1 = (0 1000 | 1 0000) = 1 1000 */
+  ( _BV(PB1) | _BV(PB4) ), /* 2 = (0 0010 | 1 0000) = 1 0010 */
+  ( _BV(PB4) | _BV(PB3) ), /* 3 = (1 0000 | 0 1000) = 1 1000 */
+  ( _BV(PB4) | _BV(PB1) ), /* 4 = (1 0000 | 0 0010) = 1 0010 */
+  ( _BV(PB1) | _BV(PB3) ), /* 5 = (0 0010 | 0 1000) = 0 1010 */
+  ( _BV(PB3) | _BV(PB1) ), /* 6 = (0 1000 | 0 0010) = 0 1010 */
 };
 
-/* ( AnodePin) */
-const uint8_t led_out[6] = {
-  ( 1<<3 ),
-  ( 1<<1 ),
-  ( 1<<4 ),
-  ( 1<<4 ),
-  ( 1<<1 ),
-  ( 1<<3 ),
+/* 
+   ( AnodePin) for each LED.
+
+   Writing a 1 to this register drives the pin high if the pin is defined as an
+   output, otherwise sets the pull up resistors.
+
+   PB5 is reset, so it's unused.
+   PB2 is SCL, so it's unused.
+   PB0 is SDA, so it's unused.
+
+   PORTB - Port B Data Register
+   Bit 5      4      3      2      1      0
+   Pin PORTB5 PORTB4 PORTB3 PORTB2 PORTB1 PORTB0
+
+*/
+const uint8_t led_out_on[LED_COUNT] = {
+  ( _BV(PB3) ),
+  ( _BV(PB1) ),
+  ( _BV(PB4) ),
+  ( _BV(PB4) ),
+  ( _BV(PB1) ),
+  ( _BV(PB3) ),
 };
+
+/* This works, but I'm not sure I can justify why. */
+const uint8_t led_dir_off[LED_COUNT] = {
+  ( !_BV(PB3) | !_BV(PB4) ), /* 1 */
+  ( !_BV(PB1) | !_BV(PB4) ), /* 2 */
+  ( !_BV(PB4) | !_BV(PB3) ), /* 3 */
+  ( !_BV(PB4) | !_BV(PB1) ), /* 4 */
+  ( !_BV(PB1) | !_BV(PB3) ), /* 5 */
+  ( !_BV(PB3) | !_BV(PB1) ), /* 6 */
+};
+
+const uint8_t led_out_off[LED_COUNT] = {
+  ( !_BV(PB3) ),
+  ( !_BV(PB1) ),
+  ( !_BV(PB4) ),
+  ( !_BV(PB4) ),
+  ( !_BV(PB1) ),
+  ( !_BV(PB3) ),
+};
+
 
 uint16_t b;
 uint8_t led, drawcount;
@@ -40,29 +90,27 @@ uint8_t led, drawcount;
 /* invert the logic - update the LEDs during the interrupt, constantly draw them otherwise. */
 ISR(TIMER0_OVF_vect) { 
 
-  /* this is a nasty hangover from earlier versions, but I haven't the heart to
-     take it out in case I actually need more repetition. */
-  for(drawcount=0; drawcount<2; drawcount++)  {  
-    /* for every LED in the array */
-    for(led = 0; led<6; led++) {
-      /* light that LED for the percentage of time from 0 to the LED's brightness */
-      for( b=0; b < led_grid[led]; b++ ) {
-	DDRB = led_dir[led];
-	PORTB = led_out[led];
-      }
-      
-      /* and turn the LEDs off for the amount of time in the led_grid array
-	 between LED brightness and 255 */
-      for( b=led_grid[led]; b < 255; b++ ) {
-	DDRB = 0;
-	PORTB = 0;
-      }
+  /* for every LED in the array */
+  for( led = 0; led<LED_COUNT; led++ ) {
+    /* light that LED for the percentage of time from 0 to the LED's brightness */
+    for( b=0; b < led_grid[led]; b++ ) {
+      DDRB = led_dir_on[led];
+      PORTB = led_out_on[led];
     }
-
-    /* turn everything off at the end in case the last LED was still lit at the end. */
-    DDRB=0;
-    PORTB=0;
+    
+    /* and turn the LEDs off for the amount of time in the led_grid array
+       between LED brightness and 255 */
+    for( b=led_grid[led]; b < 255; b++ ) {
+      DDRB = led_dir_off[led];
+      PORTB = led_out_off[led];
+    }
   }
+  
+  /* Make sure that last LED is off at the end of the interrupt - otherwise
+     it'll stay on until the next interrupt. 
+  */
+  DDRB = led_dir_off[LED_COUNT-1];
+  PORTB = led_out_off[LED_COUNT-1];
 }
 
 /* might be useful since all I'm ever lighting is a single LED..
@@ -156,26 +204,21 @@ void loop() {
     led_grid[last_mode] = x;
     delay(1);
   }
-  delay(500);
   for(int x = 255; x>=0; x--) {
     led_grid[last_mode] = x;
     delay(1);
   }
-
   delay(100);
 
   /* if the user hasn't reset by now, assume they want the current mode.  Save it. */
   EESaveSettings();
 
   bool sqw_out = true;
-
   while(1) {
-    for(int x = 0; x<=5; x++) {
+    for( int x = 0; x<LED_COUNT; x++ ) {
       led_grid[x] = 255;
       delay(500);
-      led_grid[x] = 0;
-
-    
+      
       /* 
 	 Merely clearing interrupts isn't sufficient since I'm jerking around
 	 the state of the port B registers in the interrupt.  So initialize the
@@ -193,8 +236,10 @@ void loop() {
 	sqw_out = !sqw_out;
       }
       sei();
+      delay(500);
+      
+      led_grid[x] = 0;
     }
   }
 }
-
 
